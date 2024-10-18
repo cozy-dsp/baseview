@@ -26,6 +26,7 @@ use crate::{
     WindowScalePolicy,
 };
 
+use super::cursor::Cursor;
 use super::keyboard::KeyboardState;
 use super::view::{create_view, BASEVIEW_STATE_IVAR};
 
@@ -335,8 +336,16 @@ impl<'a> Window<'a> {
         }
     }
 
-    pub fn set_mouse_cursor(&mut self, _mouse_cursor: MouseCursor) {
-        todo!()
+    pub fn set_mouse_cursor(&mut self, cursor: MouseCursor) {
+        let native_cursor = Cursor::from(cursor);
+        unsafe {
+            let bounds: NSRect = msg_send![self.ns_view as id, bounds];
+            let cursor = native_cursor.load();
+            let _: () = msg_send![self.ns_view as id,
+                addCursorRect:bounds
+                cursor:cursor
+            ];
+        }
     }
 
     #[cfg(feature = "opengl")]
