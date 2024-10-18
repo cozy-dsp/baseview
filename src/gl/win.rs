@@ -64,7 +64,9 @@ const WGL_FRAMEBUFFER_SRGB_CAPABLE_ARB: i32 = 0x20A9;
 
 type WglSwapIntervalEXT = extern "system" fn(i32) -> i32;
 
-pub type CreationFailedError = ();
+#[derive(Debug)]
+pub enum CreationFailedError {}
+
 pub struct GlContext {
     hwnd: HWND,
     hdc: HDC,
@@ -219,15 +221,39 @@ impl GlContext {
         ];
 
         let mut pixel_format = 0;
-        let mut num_formats = 0;
-        wglChoosePixelFormatARB.unwrap()(
-            hdc,
-            pixel_format_attribs.as_ptr(),
-            std::ptr::null(),
-            1,
-            &mut pixel_format,
-            &mut num_formats,
-        );
+        if let Some(wglChoosePixelFormatARB) = wglChoosePixelFormatARB {
+            let mut num_formats = 0;
+            wglChoosePixelFormatARB.unwrap()(
+                hdc,
+                pixel_format_attribs.as_ptr(),
+                std::ptr::null(),
+                1,
+                &mut pixel_format,
+                &mut num_formats,
+            );
+        };
+
+        if pixel_format == 0 {
+            let fallback_pfd = PIXELFORMATDESCRIPTOR {
+                nSize: std::mem::size_of::<PIXELFORMATDESCRIPTOR>() as u16,
+                nVersion: 1,
+                dwFlags: PFD_DRAW_TO_WINDOW
+                    | PFD_SUPPORT_OPENGL
+                    | (PFD_DOUBLEBUFFER * config.double_buffer as i32),
+                iPixelType: PFD_TYPE_RGBA,
+                cColorBits: (config.red_bits
+                    + config.blue_bits
+                    + config.green_bits
+                    + config.alpha_bits) as i32,
+                cAlphaBits: config.alpha_bits as i32,
+                cDepthBits: config.depth_bits as i32,
+                cStencilBits: config.stencil_bits as i32,
+                iLayerType: PFD_MAIN_PLANE,
+                ..std::mem::zeroed()
+            };
+
+            pixel_format = ChoosePixelFormat(hdc, &fallback_pfd)
+        }
 
         let mut pfd: PIXELFORMATDESCRIPTOR = std::mem::zeroed();
         DescribePixelFormat(
@@ -260,9 +286,11 @@ impl GlContext {
         let gl_library_name = CString::new("opengl32.dll").unwrap();
         let gl_library = LoadLibraryA(gl_library_name.as_ptr());
 
-        wglMakeCurrent(hdc, hglrc);
-        wglSwapIntervalEXT.unwrap()(config.vsync as i32);
-        wglMakeCurrent(hdc, std::ptr::null_mut());
+        if let Some(wglSwapIntervalEXT) = wglSwapIntervalEXT {
+            wglMakeCurrent(hdc, hglrc);
+            wglSwapIntervalEXT(config.vsync as i32);
+            wglMakeCurrent(hdc, std::ptr::null_mut());
+        }
 
         Ok(GlContext { hwnd, hdc, hglrc, gl_library })
     }
