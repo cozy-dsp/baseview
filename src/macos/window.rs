@@ -339,9 +339,9 @@ impl<'a> Window<'a> {
     pub fn set_mouse_cursor(&mut self, cursor: MouseCursor) {
         let native_cursor = Cursor::from(cursor);
         unsafe {
-            let bounds: NSRect = msg_send![self.ns_view as id, bounds];
+            let bounds: NSRect = msg_send![self.inner.ns_view as id, bounds];
             let cursor = native_cursor.load();
-            let _: () = msg_send![self.ns_view as id,
+            let _: () = msg_send![self.inner.ns_view as id,
                 addCursorRect:bounds
                 cursor:cursor
             ];
