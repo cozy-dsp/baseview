@@ -64,8 +64,7 @@ const WGL_FRAMEBUFFER_SRGB_CAPABLE_ARB: i32 = 0x20A9;
 
 type WglSwapIntervalEXT = extern "system" fn(i32) -> i32;
 
-#[derive(Debug)]
-pub enum CreationFailedError {}
+pub type CreationFailedError = ();
 
 pub struct GlContext {
     hwnd: HWND,
@@ -221,9 +220,11 @@ impl GlContext {
         ];
 
         let mut pixel_format = 0;
+
+        #[allow(non_snake_case)]
         if let Some(wglChoosePixelFormatARB) = wglChoosePixelFormatARB {
             let mut num_formats = 0;
-            wglChoosePixelFormatARB.unwrap()(
+            wglChoosePixelFormatARB(
                 hdc,
                 pixel_format_attribs.as_ptr(),
                 std::ptr::null(),
@@ -239,15 +240,15 @@ impl GlContext {
                 nVersion: 1,
                 dwFlags: PFD_DRAW_TO_WINDOW
                     | PFD_SUPPORT_OPENGL
-                    | (PFD_DOUBLEBUFFER * config.double_buffer as i32),
+                    | (PFD_DOUBLEBUFFER * config.double_buffer as u32),
                 iPixelType: PFD_TYPE_RGBA,
                 cColorBits: (config.red_bits
                     + config.blue_bits
                     + config.green_bits
-                    + config.alpha_bits) as i32,
-                cAlphaBits: config.alpha_bits as i32,
-                cDepthBits: config.depth_bits as i32,
-                cStencilBits: config.stencil_bits as i32,
+                    + config.alpha_bits),
+                cAlphaBits: config.alpha_bits,
+                cDepthBits: config.depth_bits,
+                cStencilBits: config.stencil_bits,
                 iLayerType: PFD_MAIN_PLANE,
                 ..std::mem::zeroed()
             };
@@ -286,6 +287,7 @@ impl GlContext {
         let gl_library_name = CString::new("opengl32.dll").unwrap();
         let gl_library = LoadLibraryA(gl_library_name.as_ptr());
 
+        #[allow(non_snake_case)]
         if let Some(wglSwapIntervalEXT) = wglSwapIntervalEXT {
             wglMakeCurrent(hdc, hglrc);
             wglSwapIntervalEXT(config.vsync as i32);
