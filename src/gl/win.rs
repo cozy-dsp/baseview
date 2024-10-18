@@ -1,5 +1,6 @@
 use std::ffi::{c_void, CString, OsStr};
 use std::os::windows::ffi::OsStrExt;
+use std::ptr::null_mut;
 
 use raw_window_handle::RawWindowHandle;
 
@@ -278,8 +279,17 @@ impl GlContext {
             0
         ];
 
-        let hglrc =
-            wglCreateContextAttribsARB.unwrap()(hdc, std::ptr::null_mut(), ctx_attribs.as_ptr());
+        let mut hglrc = null_mut();
+
+        #[allow(non_snake_case)]
+        if let Some(wglCreateContextAttribsARB) = wglCreateContextAttribsARB {
+            hglrc = wglCreateContextAttribsARB(hdc, std::ptr::null_mut(), ctx_attribs.as_ptr());
+        }
+
+        if hglrc.is_null() {
+            hglrc = wglCreateContext(hdc);
+        }
+
         if hglrc.is_null() {
             return Err(GlError::CreationFailed(()));
         }
