@@ -322,12 +322,10 @@ impl<'a> Window<'a> {
     }
 
     pub fn has_focus(&mut self) -> bool {
-        unimplemented!()
+        false
     }
 
-    pub fn focus(&mut self) {
-        unimplemented!()
-    }
+    pub fn focus(&mut self) {}
 
     pub fn resize(&mut self, size: Size) {
         let scaling = self.inner.window_info.scale();
