@@ -191,6 +191,7 @@ impl GlContext {
         };
 
         wglMakeCurrent(hdc_tmp, std::ptr::null_mut());
+        wglDeleteContext(hglrc_tmp);
         ReleaseDC(hwnd_tmp, hdc_tmp);
         UnregisterClassW(class as *const WCHAR, hinstance);
         DestroyWindow(hwnd_tmp);
@@ -198,7 +199,6 @@ impl GlContext {
         // Create actual context
 
         let hwnd = handle.hwnd as HWND;
-
         let hdc = GetDC(hwnd);
 
         #[rustfmt::skip]
