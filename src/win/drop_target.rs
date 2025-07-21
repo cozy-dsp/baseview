@@ -114,7 +114,7 @@ impl DropTarget {
         };
 
         let mut pt = POINT { x: pt.x, y: pt.y };
-        unsafe { ScreenToClient(window_state.hwnd, &mut pt as *mut POINT) };
+        unsafe { ScreenToClient(window_state.window.handle, &mut pt as *mut POINT) };
 
         let phy_point = PhyPoint::new(pt.x, pt.y);
         self.drag_position = phy_point.to_logical(&window_state.window_info());
