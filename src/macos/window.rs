@@ -6,7 +6,7 @@ use std::rc::Rc;
 
 use cocoa::appkit::{
     NSApp, NSApplication, NSApplicationActivationPolicyRegular, NSBackingStoreBuffered,
-    NSPasteboard, NSView, NSWindow, NSWindowStyleMask,
+    NSPasteboard, NSScreen, NSView, NSWindow, NSWindowStyleMask,
 };
 use cocoa::base::{id, nil, BOOL, NO, YES};
 use cocoa::foundation::{NSAutoreleasePool, NSPoint, NSRect, NSSize, NSString};
@@ -29,6 +29,7 @@ use crate::{
 use super::cursor::Cursor;
 use super::keyboard::KeyboardState;
 use super::view::{create_view, BASEVIEW_STATE_IVAR};
+use super::CGWarpMouseCursorPosition;
 
 #[cfg(feature = "opengl")]
 use crate::gl::{GlConfig, GlContext};
@@ -348,7 +349,20 @@ impl<'a> Window<'a> {
         }
     }
 
-    pub fn set_mouse_position(&mut self, point: Point) {}
+    pub fn set_mouse_position(&mut self, point: Point) {
+        unsafe {
+            if let Some(window) = self.inner.ns_window.get() {
+                let bounds =
+                    NSWindow::convertRectToScreen_(window, NSView::frame(self.inner.ns_view));
+                let screen_height = NSScreen::frame(NSWindow::screen(window)).size.height;
+
+                let point_x = bounds.origin.x + point.x;
+                let point_y = screen_height - bounds.origin.y - point.y;
+
+                CGWarpMouseCursorPosition(NSPoint::new(point_x, point_y));
+            }
+        }
+    }
 
     #[cfg(feature = "opengl")]
     pub fn gl_context(&self) -> Option<&GlContext> {

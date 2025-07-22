@@ -16,3 +16,10 @@ mod consts {
     pub const NSDragOperationMove: NSUInteger = 16;
 }
 use consts::*;
+
+#[link(name = "CoreFoundation", kind = "framework")]
+#[link(name = "CoreVideo", kind = "framework")]
+#[allow(improper_ctypes)]
+unsafe extern "C" {
+    fn CGWarpMouseCursorPosition(point: cocoa::foundation::NSPoint) -> i32;
+}
