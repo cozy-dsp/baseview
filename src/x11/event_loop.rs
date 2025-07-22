@@ -66,8 +66,6 @@ impl EventLoop {
     // switch between poll() and select() (the latter of which is fine on *BSD), and we should do
     // the same.
     pub fn run(&mut self) -> Result<(), Box<dyn Error>> {
-        use nix::poll::*;
-
         let xcb_fd = self.window.xcb_connection.conn.as_raw_fd();
 
         let mut last_frame = Instant::now();
@@ -86,24 +84,24 @@ impl EventLoop {
                 last_frame = Instant::max(next_frame, Instant::now() - self.frame_interval);
             }
 
-            let mut fds = [PollFd::new(xcb_fd, PollFlags::POLLIN)];
-
-            // Check for any events in the internal buffers
-            // before going to sleep:
             self.drain_xcb_events()?;
 
+            let mut fd = libc::pollfd { fd: xcb_fd, events: libc::POLLIN, revents: 0 };
+            let result = unsafe {
+                libc::poll(
+                    &mut fd,
+                    1 as _,
+                    next_frame.duration_since(Instant::now()).subsec_millis() as i32,
+                )
+            };
+
             // FIXME: handle errors
-            poll(&mut fds, next_frame.duration_since(Instant::now()).subsec_millis() as i32)
-                .unwrap();
+            if result == -1 || (fd.revents & libc::POLLERR) != 0 {
+                panic!("xcb connection poll error");
+            }
 
-            if let Some(revents) = fds[0].revents() {
-                if revents.contains(PollFlags::POLLERR) {
-                    panic!("xcb connection poll error");
-                }
-
-                if revents.contains(PollFlags::POLLIN) {
-                    self.drain_xcb_events()?;
-                }
+            if (fd.revents & libc::POLLIN) != 0 {
+                self.drain_xcb_events()?;
             }
 
             // Check if the parents's handle was dropped (such as when the host
