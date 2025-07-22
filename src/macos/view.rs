@@ -41,7 +41,7 @@ macro_rules! add_simple_mouse_class_method {
         extern "C" fn $sel(this: &Object, _: Sel, _: id){
             let state = unsafe { WindowState::from_view(this) };
 
-            state.trigger_event(Event::Mouse($event));
+            state.trigger_deferrable_event(Event::Mouse($event));
         }
 
         $class.add_method(
@@ -61,7 +61,7 @@ macro_rules! add_mouse_button_class_method {
 
             let modifiers = unsafe { NSEvent::modifierFlags(event) };
 
-            state.trigger_event(Event::Mouse($event_ty {
+            state.trigger_deferrable_event(Event::Mouse($event_ty {
                 button: $button,
                 modifiers: make_modifiers(modifiers),
             }));
@@ -308,7 +308,7 @@ extern "C" fn view_did_change_backing_properties(this: &Object, _: Sel, _: id) {
         // other platform implementations
         if new_window_info.physical_size() != window_info.physical_size() {
             state.window_info.set(new_window_info);
-            state.trigger_event(Event::Window(WindowEvent::Resized(new_window_info)));
+            state.trigger_deferrable_event(Event::Window(WindowEvent::Resized(new_window_info)));
         }
     }
 }
@@ -402,7 +402,7 @@ extern "C" fn mouse_moved(this: &Object, _sel: Sel, event: id) {
 
     let position = Point { x: point.x, y: point.y };
 
-    state.trigger_event(Event::Mouse(MouseEvent::CursorMoved {
+    state.trigger_deferrable_event(Event::Mouse(MouseEvent::CursorMoved {
         position,
         modifiers: make_modifiers(modifiers),
     }));
@@ -424,7 +424,7 @@ extern "C" fn scroll_wheel(this: &Object, _: Sel, event: id) {
 
     let modifiers = unsafe { NSEvent::modifierFlags(event) };
 
-    state.trigger_event(Event::Mouse(MouseEvent::WheelScrolled {
+    state.trigger_deferrable_event(Event::Mouse(MouseEvent::WheelScrolled {
         delta,
         modifiers: make_modifiers(modifiers),
     }));
@@ -546,7 +546,7 @@ extern "C" fn handle_notification(this: &Object, _cmd: Sel, notification: id) {
         // by the becomeFirstResponder and resignFirstResponder methods on the NSView itself.
         if notification_object == window && first_responder == this as *const Object as id {
             let is_key_window: BOOL = msg_send![window, isKeyWindow];
-            state.trigger_event(Event::Window(if is_key_window == YES {
+            state.trigger_deferrable_event(Event::Window(if is_key_window == YES {
                 WindowEvent::Focused
             } else {
                 WindowEvent::Unfocused

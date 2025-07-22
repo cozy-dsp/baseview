@@ -621,12 +621,12 @@ impl Window<'_> {
                 Win32Window::create(window_class, &options.title, initial_size, parent);
 
             #[cfg(feature = "opengl")]
-            let gl_context: Option<GlContext> = options.gl_config.map(|gl_config| {
+            let gl_context: Option<GlContext> = options.gl_config.and_then(|gl_config| {
                 let mut handle = Win32WindowHandle::empty();
                 handle.hwnd = raw_window.handle as *mut c_void;
                 let handle = RawWindowHandle::Win32(handle);
 
-                GlContext::create(&handle, gl_config).expect("Could not create OpenGL context")
+                GlContext::create(&handle, gl_config).ok()
             });
 
             let (parent_handle, window_handle) = ParentHandle::new(raw_window.handle);

@@ -163,7 +163,7 @@ impl<'a> Window<'a> {
             #[cfg(feature = "opengl")]
             gl_context: options
                 .gl_config
-                .map(|gl_config| Self::create_gl_context(None, ns_view, gl_config)),
+                .and_then(|gl_config| Self::create_gl_context(None, ns_view, gl_config)),
         };
 
         let window_handle = Self::init(window_inner, window_info, build);
@@ -238,7 +238,7 @@ impl<'a> Window<'a> {
             #[cfg(feature = "opengl")]
             gl_context: options
                 .gl_config
-                .map(|gl_config| Self::create_gl_context(Some(ns_window), ns_view, gl_config)),
+                .and_then(|gl_config| Self::create_gl_context(Some(ns_window), ns_view, gl_config)),
         };
 
         let _ = Self::init(window_inner, window_info, build);
@@ -370,13 +370,15 @@ impl<'a> Window<'a> {
     }
 
     #[cfg(feature = "opengl")]
-    fn create_gl_context(ns_window: Option<id>, ns_view: id, config: GlConfig) -> GlContext {
+    fn create_gl_context(
+        ns_window: Option<id>, ns_view: id, config: GlConfig,
+    ) -> Option<GlContext> {
         let mut handle = AppKitWindowHandle::empty();
         handle.ns_window = ns_window.unwrap_or(ptr::null_mut()) as *mut c_void;
         handle.ns_view = ns_view as *mut c_void;
         let handle = RawWindowHandle::AppKit(handle);
 
-        unsafe { GlContext::create(&handle, config).expect("Could not create OpenGL context") }
+        unsafe { GlContext::create(&handle, config).ok() }
     }
 }
 

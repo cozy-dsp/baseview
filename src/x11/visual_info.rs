@@ -23,18 +23,26 @@ impl WindowVisualConfig {
     ) -> Result<Self, Box<dyn Error>> {
         let Some(gl_config) = gl_config else { return Self::find_best_visual_config(connection) };
 
-        // SAFETY: TODO
-        let (fb_config, window_config) = unsafe {
+        let result = unsafe {
             crate::gl::platform::GlContext::get_fb_config_and_visual(connection.dpy, gl_config)
-        }
-        .expect("Could not fetch framebuffer config");
+                .ok()
+                .and_then(|(fb_config, window_config)| {
+                    create_color_map(connection, window_config.visual)
+                        .map(|color_map| Self {
+                            fb_config: Some(fb_config),
+                            visual_depth: window_config.depth,
+                            visual_id: window_config.visual,
+                            color_map: Some(color_map),
+                        })
+                        .ok()
+                })
+        };
 
-        Ok(Self {
-            fb_config: Some(fb_config),
-            visual_depth: window_config.depth,
-            visual_id: window_config.visual,
-            color_map: Some(create_color_map(connection, window_config.visual)?),
-        })
+        if let Some(result) = result {
+            Ok(result)
+        } else {
+            Self::find_best_visual_config(connection)
+        }
     }
 
     pub fn find_best_visual_config(connection: &XcbConnection) -> Result<Self, Box<dyn Error>> {

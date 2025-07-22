@@ -254,16 +254,15 @@ impl<'a> Window<'a> {
         //       no error handling anymore at this point. Everything is more or less unchanged
         //       compared to when raw-gl-context was a separate crate.
         #[cfg(feature = "opengl")]
-        let gl_context = visual_info.fb_config.map(|fb_config| {
+        let gl_context = visual_info.fb_config.and_then(|fb_config| {
             use std::ffi::c_ulong;
 
             let window = window_id as c_ulong;
             let display = xcb_connection.dpy;
 
             // Because of the visual negotation we had to take some extra steps to create this context
-            let context = unsafe { platform::GlContext::create(window, display, fb_config) }
-                .expect("Could not create OpenGL context");
-            GlContext::new(context)
+            let context = unsafe { platform::GlContext::create(window, display, fb_config) };
+            context.ok().map(|context| GlContext::new(context))
         });
 
         let mut inner = WindowInner {
