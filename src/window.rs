@@ -6,7 +6,7 @@ use raw_window_handle::{
 
 use crate::event::{Event, EventStatus};
 use crate::window_open_options::WindowOpenOptions;
-use crate::{MouseCursor, Size};
+use crate::{MouseCursor, Point, Size};
 
 #[cfg(target_os = "macos")]
 use crate::macos as platform;
@@ -100,6 +100,10 @@ impl<'a> Window<'a> {
 
     pub fn set_mouse_cursor(&mut self, cursor: MouseCursor) {
         self.window.set_mouse_cursor(cursor);
+    }
+
+    pub fn set_mouse_position(&mut self, point: Point) {
+        self.window.set_mouse_position(point);
     }
 
     pub fn has_focus(&mut self) -> bool {

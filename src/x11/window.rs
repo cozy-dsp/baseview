@@ -20,7 +20,7 @@ use x11rb::wrapper::ConnectionExt as _;
 
 use super::XcbConnection;
 use crate::{
-    Event, MouseCursor, Size, WindowEvent, WindowHandler, WindowInfo, WindowOpenOptions,
+    Event, MouseCursor, Point, Size, WindowEvent, WindowHandler, WindowInfo, WindowOpenOptions,
     WindowScalePolicy,
 };
 
@@ -310,6 +310,22 @@ impl<'a> Window<'a> {
         }
 
         self.inner.mouse_cursor.set(mouse_cursor);
+    }
+
+    pub fn set_mouse_position(&self, point: Point) {
+        let point = point.to_physical(&self.inner.window_info);
+
+        let _ = self.inner.xcb_connection.conn.warp_pointer(
+            x11rb::NONE,
+            self.inner.window_id,
+            0,
+            0,
+            0,
+            0,
+            point.x as i16,
+            point.y as i16,
+        );
+        let _ = self.inner.xcb_connection.conn.flush();
     }
 
     pub fn close(&mut self) {

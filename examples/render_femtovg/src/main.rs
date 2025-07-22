@@ -1,7 +1,7 @@
 use baseview::gl::GlConfig;
 use baseview::{
-    Event, EventStatus, MouseEvent, PhyPoint, Size, Window, WindowEvent, WindowHandler, WindowInfo,
-    WindowOpenOptions, WindowScalePolicy,
+    Event, EventStatus, MouseEvent, PhyPoint, Point, Size, Window, WindowEvent, WindowHandler,
+    WindowInfo, WindowOpenOptions, WindowScalePolicy,
 };
 use femtovg::renderer::OpenGl;
 use femtovg::{Canvas, Color};
@@ -75,7 +75,7 @@ impl WindowHandler for FemtovgExample {
         self.damaged = false;
     }
 
-    fn on_event(&mut self, _window: &mut Window, event: Event) -> EventStatus {
+    fn on_event(&mut self, window: &mut Window, event: Event) -> EventStatus {
         match event {
             Event::Window(WindowEvent::Resized(size)) => {
                 let phy_size = size.physical_size();
@@ -86,6 +86,10 @@ impl WindowHandler for FemtovgExample {
             Event::Mouse(MouseEvent::CursorMoved { position, .. }) => {
                 self.current_mouse_position = position.to_physical(&self.current_size);
                 self.damaged = true;
+
+                if position.x < -10.0 {
+                    window.set_mouse_position(Point { x: 256.0, y: 256.0 });
+                }
             }
             _ => {}
         };

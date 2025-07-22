@@ -22,7 +22,7 @@ use raw_window_handle::{
 };
 
 use crate::{
-    Event, EventStatus, MouseCursor, Size, WindowHandler, WindowInfo, WindowOpenOptions,
+    Event, EventStatus, MouseCursor, Point, Size, WindowHandler, WindowInfo, WindowOpenOptions,
     WindowScalePolicy,
 };
 
@@ -347,6 +347,8 @@ impl<'a> Window<'a> {
             ];
         }
     }
+
+    pub fn set_mouse_position(&mut self, point: Point) {}
 
     #[cfg(feature = "opengl")]
     pub fn gl_context(&self) -> Option<&GlContext> {
