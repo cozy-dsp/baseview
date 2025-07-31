@@ -157,7 +157,7 @@ impl<'a> Window<'a> {
         let _ = rx.recv().unwrap().unwrap();
 
         thread.join().unwrap_or_else(|err| {
-            eprintln!("Window thread panicked: {:#?}", err);
+            eprintln!("Window thread panicked: {err:#?}");
         });
     }
 
@@ -262,7 +262,7 @@ impl<'a> Window<'a> {
 
             // Because of the visual negotation we had to take some extra steps to create this context
             let context = unsafe { platform::GlContext::create(window, display, fb_config) };
-            context.ok().map(|context| GlContext::new(context))
+            context.ok().map(GlContext::new)
         });
 
         let mut inner = WindowInner {

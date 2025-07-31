@@ -1,3 +1,5 @@
+#![allow(clippy::uninlined_format_args)]
+
 use baseview::{
     Event, EventStatus, PhySize, Window, WindowEvent, WindowHandle, WindowHandler,
     WindowScalePolicy,

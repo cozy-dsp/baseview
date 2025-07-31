@@ -86,22 +86,22 @@ impl GlContext {
 
         errors::XErrorHandler::handle(display, |error_handler| {
             #[allow(non_snake_case)]
-            let glXCreateContextAttribsARB: GlXCreateContextAttribsARB = {
+            let glXCreateContextAttribsARB = {
                 let addr = get_proc_address("glXCreateContextAttribsARB");
                 if addr.is_null() {
                     return Err(GlError::CreationFailed(CreationFailedError::GetProcAddressFailed));
                 } else {
-                    std::mem::transmute(addr)
+                    std::mem::transmute::<*const c_void, GlXCreateContextAttribsARB>(addr)
                 }
             };
 
             #[allow(non_snake_case)]
-            let glXSwapIntervalEXT: GlXSwapIntervalEXT = {
+            let glXSwapIntervalEXT = {
                 let addr = get_proc_address("glXSwapIntervalEXT");
                 if addr.is_null() {
                     return Err(GlError::CreationFailed(CreationFailedError::GetProcAddressFailed));
                 } else {
-                    std::mem::transmute(addr)
+                    std::mem::transmute::<*const c_void, GlXSwapIntervalEXT>(addr)
                 }
             };
 

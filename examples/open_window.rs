@@ -1,7 +1,8 @@
-use std::num::NonZeroU32;
-use std::time::Duration;
+#![allow(clippy::uninlined_format_args)]
 
 use rtrb::{Consumer, RingBuffer};
+use std::num::NonZeroU32;
+use std::time::Duration;
 
 #[cfg(target_os = "macos")]
 use baseview::{copy_to_clipboard, MouseEvent};
