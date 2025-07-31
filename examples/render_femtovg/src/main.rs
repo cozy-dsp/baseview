@@ -1,3 +1,5 @@
+#![allow(clippy::uninlined_format_args)]
+
 use baseview::gl::GlConfig;
 use baseview::{
     Event, EventStatus, MouseEvent, PhyPoint, Point, Size, Window, WindowEvent, WindowHandler,

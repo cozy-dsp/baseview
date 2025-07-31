@@ -159,7 +159,7 @@ impl Window {
         let _ = rx.recv().unwrap().unwrap();
 
         thread.join().unwrap_or_else(|err| {
-            eprintln!("Window thread panicked: {:#?}", err);
+            eprintln!("Window thread panicked: {err:#?}");
         });
     }
 

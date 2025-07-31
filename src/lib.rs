@@ -1,3 +1,5 @@
+#![allow(clippy::missing_safety_doc)]
+
 #[cfg(target_os = "macos")]
 mod macos;
 #[cfg(target_os = "windows")]
