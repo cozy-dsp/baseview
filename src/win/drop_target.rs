@@ -94,7 +94,7 @@ impl DropTarget {
 
             let event = Event::Mouse(event);
             let event_status =
-                window_state.handler_mut().as_mut().unwrap().on_event(&mut window, event);
+                window_state.handler_mut().as_mut().unwrap().on_event(window, event);
 
             if let Some(pdwEffect) = pdwEffect {
                 match event_status {
