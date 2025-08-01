@@ -56,12 +56,12 @@ pub trait WindowHandler {
 pub struct Window {
     window: platform::Window,
     // so that Window is !Send on all platforms
-    //phantom: PhantomData<*mut ()>,
+    phantom: PhantomData<*mut ()>,
 }
 
 impl Window {
     pub(crate) fn new(window: platform::Window) -> Window {
-        Window { window }
+        Window { window, phantom: PhantomData }
     }
 
     pub fn open_parented<P, H, B>(parent: &P, options: WindowOpenOptions, build: B) -> WindowHandle

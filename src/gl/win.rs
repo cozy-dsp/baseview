@@ -86,10 +86,6 @@ impl GlContext {
             return Err(GlError::InvalidWindowHandle);
         };
 
-        if handle.hwnd.is_null() {
-            return Err(GlError::InvalidWindowHandle);
-        }
-
         // Create temporary window and context to load function pointers
 
         let class_name_str = format!("raw-gl-context-window-{}", uuid::Uuid::new_v4().to_simple());
@@ -198,7 +194,7 @@ impl GlContext {
 
         // Create actual context
 
-        let hwnd = handle.hwnd as HWND;
+        let hwnd = handle.hwnd.get() as HWND;
         let hdc = GetDC(hwnd);
 
         #[rustfmt::skip]
