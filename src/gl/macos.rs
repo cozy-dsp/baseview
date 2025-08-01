@@ -35,11 +35,7 @@ impl GlContext {
             return Err(GlError::InvalidWindowHandle);
         };
 
-        if handle.ns_view.is_null() {
-            return Err(GlError::InvalidWindowHandle);
-        }
-
-        let parent_view = handle.ns_view as id;
+        let parent_view = handle.ns_view.as_ptr() as id;
 
         let version = if config.version < (3, 2) && config.profile == Profile::Compatibility {
             NSOpenGLProfileVersionLegacy

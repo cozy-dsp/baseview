@@ -1,7 +1,7 @@
 use std::cell::{Cell, RefCell};
 use std::collections::VecDeque;
 use std::ffi::c_void;
-use std::ptr;
+use std::ptr::NonNull;
 use std::rc::Rc;
 
 use cocoa::appkit::{
@@ -17,8 +17,7 @@ use keyboard_types::KeyboardEvent;
 use objc::class;
 use objc::{msg_send, runtime::Object, sel, sel_impl};
 use raw_window_handle::{
-    AppKitDisplayHandle, AppKitWindowHandle, HasRawDisplayHandle, HasRawWindowHandle,
-    RawDisplayHandle, RawWindowHandle,
+    AppKitDisplayHandle, AppKitWindowHandle, DisplayHandle, HandleError, HasDisplayHandle, HasWindowHandle, RawDisplayHandle, RawWindowHandle
 };
 
 use crate::{
@@ -48,9 +47,9 @@ impl WindowHandle {
     }
 }
 
-unsafe impl HasRawWindowHandle for WindowHandle {
-    fn raw_window_handle(&self) -> RawWindowHandle {
-        self.state.window_inner.raw_window_handle()
+impl HasWindowHandle for WindowHandle {
+    fn window_handle(&self) -> Result<raw_window_handle::WindowHandle<'_>, HandleError> {
+        Ok(unsafe { raw_window_handle::WindowHandle::borrow_raw(self.state.window_inner.raw_window_handle()?) })
     }
 }
 
@@ -110,31 +109,28 @@ impl WindowInner {
         }
     }
 
-    fn raw_window_handle(&self) -> RawWindowHandle {
+    fn raw_window_handle(&self) -> Result<RawWindowHandle, HandleError> {
         if self.open.get() {
-            let ns_window = self.ns_window.get().unwrap_or(ptr::null_mut()) as *mut c_void;
+            let handle = AppKitWindowHandle::new(NonNull::new(self.ns_view as *mut c_void).ok_or(HandleError::Unavailable)?);
 
-            let mut handle = AppKitWindowHandle::empty();
-            handle.ns_window = ns_window;
-            handle.ns_view = self.ns_view as *mut c_void;
-
-            return RawWindowHandle::AppKit(handle);
+            Ok(RawWindowHandle::AppKit(handle))
+        } else {
+            Err(HandleError::Unavailable)
         }
-
-        RawWindowHandle::AppKit(AppKitWindowHandle::empty())
     }
 }
 
-pub struct Window<'a> {
-    inner: &'a WindowInner,
+#[derive(Clone)]
+pub struct Window {
+    inner: Rc<WindowInner>,
 }
 
-impl<'a> Window<'a> {
+impl Window {
     pub fn open_parented<P, H, B>(parent: &P, options: WindowOpenOptions, build: B) -> WindowHandle
     where
-        P: HasRawWindowHandle,
+        P: HasWindowHandle,
         H: WindowHandler + 'static,
-        B: FnOnce(&mut crate::Window) -> H,
+        B: FnOnce(crate::Window) -> H,
         B: Send + 'static,
     {
         let pool = unsafe { NSAutoreleasePool::new(nil) };
@@ -146,7 +142,8 @@ impl<'a> Window<'a> {
 
         let window_info = WindowInfo::from_logical_size(options.size, scaling);
 
-        let handle = if let RawWindowHandle::AppKit(handle) = parent.raw_window_handle() {
+        let parent_handle = parent.window_handle().expect("window should be available!");
+        let handle = if let RawWindowHandle::AppKit(handle) = parent_handle.as_raw() {
             handle
         } else {
             panic!("Not a macOS window");
@@ -169,7 +166,7 @@ impl<'a> Window<'a> {
         let window_handle = Self::init(window_inner, window_info, build);
 
         unsafe {
-            let _: id = msg_send![handle.ns_view as *mut Object, addSubview: ns_view];
+            let _: id = msg_send![handle.ns_view.as_ptr() as *mut Object, addSubview: ns_view];
 
             let () = msg_send![pool, drain];
         }
@@ -180,7 +177,7 @@ impl<'a> Window<'a> {
     pub fn open_blocking<H, B>(options: WindowOpenOptions, build: B)
     where
         H: WindowHandler + 'static,
-        B: FnOnce(&mut crate::Window) -> H,
+        B: FnOnce(crate::Window) -> H,
         B: Send + 'static,
     {
         let pool = unsafe { NSAutoreleasePool::new(nil) };
@@ -256,11 +253,12 @@ impl<'a> Window<'a> {
     fn init<H, B>(window_inner: WindowInner, window_info: WindowInfo, build: B) -> WindowHandle
     where
         H: WindowHandler + 'static,
-        B: FnOnce(&mut crate::Window) -> H,
+        B: FnOnce(crate::Window) -> H,
         B: Send + 'static,
     {
-        let mut window = crate::Window::new(Window { inner: &window_inner });
-        let window_handler = Box::new(build(&mut window));
+        let window_inner = Rc::new(window_inner);
+        let mut window = crate::Window::new(Window { inner: window_inner.clone() });
+        let window_handler = Box::new(build(window));
 
         let ns_view = window_inner.ns_view;
 
@@ -373,9 +371,7 @@ impl<'a> Window<'a> {
     fn create_gl_context(
         ns_window: Option<id>, ns_view: id, config: GlConfig,
     ) -> Option<GlContext> {
-        let mut handle = AppKitWindowHandle::empty();
-        handle.ns_window = ns_window.unwrap_or(ptr::null_mut()) as *mut c_void;
-        handle.ns_view = ns_view as *mut c_void;
+        let mut handle = AppKitWindowHandle::new(NonNull::new(ns_view as *mut c_void).expect("this should work probably"));
         let handle = RawWindowHandle::AppKit(handle);
 
         unsafe { GlContext::create(&handle, config).ok() }
@@ -383,7 +379,7 @@ impl<'a> Window<'a> {
 }
 
 pub(super) struct WindowState {
-    pub(super) window_inner: WindowInner,
+    pub(super) window_inner: Rc<WindowInner>,
     window_handler: RefCell<Box<dyn WindowHandler>>,
     keyboard_state: KeyboardState,
     frame_timer: Cell<Option<CFRunLoopTimer>>,
@@ -413,9 +409,9 @@ impl WindowState {
     /// Trigger the event immediately and return the event status.
     /// Will panic if `window_handler` is already borrowed (see `trigger_deferrable_event`).
     pub(super) fn trigger_event(&self, event: Event) -> EventStatus {
-        let mut window = crate::Window::new(Window { inner: &self.window_inner });
+        let mut window = crate::Window::new(Window { inner: self.window_inner.clone() });
         let mut window_handler = self.window_handler.borrow_mut();
-        let status = window_handler.on_event(&mut window, event);
+        let status = window_handler.on_event(window, event);
         self.send_deferred_events(window_handler.as_mut());
         status
     }
@@ -425,8 +421,8 @@ impl WindowState {
     /// As this method might result in the event triggering asynchronously, it can't reliably return the event status.
     pub(super) fn trigger_deferrable_event(&self, event: Event) {
         if let Ok(mut window_handler) = self.window_handler.try_borrow_mut() {
-            let mut window = crate::Window::new(Window { inner: &self.window_inner });
-            window_handler.on_event(&mut window, event);
+            let mut window = crate::Window::new(Window { inner: self.window_inner.clone() });
+            window_handler.on_event(window, event);
             self.send_deferred_events(window_handler.as_mut());
         } else {
             self.deferred_events.borrow_mut().push_back(event);
@@ -434,10 +430,10 @@ impl WindowState {
     }
 
     pub(super) fn trigger_frame(&self) {
-        let mut window = crate::Window::new(Window { inner: &self.window_inner });
+        let mut window = crate::Window::new(Window { inner: self.window_inner.clone() });
         let mut window_handler = self.window_handler.borrow_mut();
         self.send_deferred_events(window_handler.as_mut());
-        window_handler.on_frame(&mut window);
+        window_handler.on_frame(window);
     }
 
     pub(super) fn keyboard_state(&self) -> &KeyboardState {
@@ -473,11 +469,11 @@ impl WindowState {
     }
 
     fn send_deferred_events(&self, window_handler: &mut dyn WindowHandler) {
-        let mut window = crate::Window::new(Window { inner: &self.window_inner });
+        let window = crate::Window::new(Window { inner: self.window_inner.clone() });
         loop {
             let next_event = self.deferred_events.borrow_mut().pop_front();
             if let Some(event) = next_event {
-                window_handler.on_event(&mut window, event);
+                window_handler.on_event(window.clone(), event);
             } else {
                 break;
             }
@@ -485,15 +481,15 @@ impl WindowState {
     }
 }
 
-unsafe impl<'a> HasRawWindowHandle for Window<'a> {
-    fn raw_window_handle(&self) -> RawWindowHandle {
-        self.inner.raw_window_handle()
+impl HasWindowHandle for Window {
+    fn window_handle(&self) -> Result<raw_window_handle::WindowHandle<'_>, HandleError> {
+        Ok(unsafe {raw_window_handle::WindowHandle::borrow_raw(self.inner.raw_window_handle()?)})
     }
 }
 
-unsafe impl<'a> HasRawDisplayHandle for Window<'a> {
-    fn raw_display_handle(&self) -> RawDisplayHandle {
-        RawDisplayHandle::AppKit(AppKitDisplayHandle::empty())
+impl HasDisplayHandle for Window {
+    fn display_handle(&self) -> Result<DisplayHandle<'_>, HandleError> {
+        Ok(unsafe {DisplayHandle::borrow_raw(RawDisplayHandle::AppKit(AppKitDisplayHandle::new()))})
     }
 }
 
