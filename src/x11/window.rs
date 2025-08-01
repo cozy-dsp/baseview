@@ -2,7 +2,7 @@ use std::cell::Cell;
 use std::error::Error;
 use std::ffi::c_void;
 use std::ptr::NonNull;
-use std::rc::Rc;
+use std::rc::{Rc, Weak};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, sync_channel, Receiver, SyncSender};
 use std::sync::Arc;
@@ -85,15 +85,14 @@ impl Drop for ParentHandle {
     }
 }
 
-#[derive(Clone)]
 pub(crate) struct WindowInner {
     // GlContext should be dropped **before** XcbConnection is dropped
     #[cfg(feature = "opengl")]
     gl_context: Option<Rc<GlContext>>,
 
-    pub(crate) xcb_connection: Rc<XcbConnection>,
+    pub(crate) xcb_connection: XcbConnection,
     window_id: XWindow,
-    pub(crate) window_info: WindowInfo,
+    pub(crate) window_info: Cell<WindowInfo>,
     visual_id: Visualid,
     mouse_cursor: Cell<MouseCursor>,
 
@@ -102,7 +101,7 @@ pub(crate) struct WindowInner {
 
 #[derive(Clone)]
 pub struct Window {
-    pub(crate) inner: WindowInner,
+    pub(crate) inner: Weak<WindowInner>,
 }
 
 // Hack to allow sending a RawWindowHandle between threads. Do not make public
@@ -264,13 +263,13 @@ impl Window {
 
             // Because of the visual negotation we had to take some extra steps to create this context
             let context = unsafe { platform::GlContext::create(window, display, fb_config) };
-            context.ok().map(|context| Rc::new(GlContext::new(context)))
+            context.ok().map(GlContext::new).map(Rc::new)
         });
 
-        let mut inner = WindowInner {
-            xcb_connection: Rc::new(xcb_connection),
+        let inner = Rc::new(WindowInner {
+            xcb_connection,
             window_id,
-            window_info,
+            window_info: Cell::new(window_info),
             visual_id: visual_info.visual_id,
             mouse_cursor: Cell::new(MouseCursor::default()),
 
@@ -278,9 +277,9 @@ impl Window {
 
             #[cfg(feature = "opengl")]
             gl_context,
-        };
+        });
 
-        let window = crate::Window::new(Window { inner: inner.clone() });
+        let window = crate::Window::new(Window { inner: Rc::downgrade(&inner) });
 
         let mut handler = build(window.clone());
 
@@ -298,29 +297,31 @@ impl Window {
     }
 
     pub fn set_mouse_cursor(&self, mouse_cursor: MouseCursor) {
-        if self.inner.mouse_cursor.get() == mouse_cursor {
+        let Some(inner) = self.inner.upgrade() else { return };
+        if inner.mouse_cursor.get() == mouse_cursor {
             return;
         }
 
-        let xid = self.inner.xcb_connection.get_cursor(mouse_cursor).unwrap();
+        let xid = inner.xcb_connection.get_cursor(mouse_cursor).unwrap();
 
         if xid != 0 {
-            let _ = self.inner.xcb_connection.conn.change_window_attributes(
-                self.inner.window_id,
+            let _ = inner.xcb_connection.conn.change_window_attributes(
+                inner.window_id,
                 &ChangeWindowAttributesAux::new().cursor(xid),
             );
-            let _ = self.inner.xcb_connection.conn.flush();
+            let _ = inner.xcb_connection.conn.flush();
         }
 
-        self.inner.mouse_cursor.set(mouse_cursor);
+        inner.mouse_cursor.set(mouse_cursor);
     }
 
     pub fn set_mouse_position(&self, point: Point) {
-        let point = point.to_physical(&self.inner.window_info);
+        let Some(inner) = self.inner.upgrade() else { return };
+        let point = point.to_physical(&inner.window_info.get());
 
-        let _ = self.inner.xcb_connection.conn.warp_pointer(
+        let _ = inner.xcb_connection.conn.warp_pointer(
             x11rb::NONE,
-            self.inner.window_id,
+            inner.window_id,
             0,
             0,
             0,
@@ -328,11 +329,12 @@ impl Window {
             point.x as i16,
             point.y as i16,
         );
-        let _ = self.inner.xcb_connection.conn.flush();
+        let _ = inner.xcb_connection.conn.flush();
     }
 
     pub fn close(&mut self) {
-        self.inner.close_requested.set(true);
+        let Some(inner) = self.inner.upgrade() else { return };
+        inner.close_requested.set(true);
     }
 
     pub fn has_focus(&mut self) -> bool {
@@ -342,32 +344,35 @@ impl Window {
     pub fn focus(&mut self) {}
 
     pub fn resize(&mut self, size: Size) {
-        let scaling = self.inner.window_info.scale();
+        let Some(inner) = self.inner.upgrade() else { return };
+        let scaling = inner.window_info.get().scale();
         let new_window_info = WindowInfo::from_logical_size(size, scaling);
 
-        let _ = self.inner.xcb_connection.conn.configure_window(
-            self.inner.window_id,
+        let _ = inner.xcb_connection.conn.configure_window(
+            inner.window_id,
             &ConfigureWindowAux::new()
                 .width(new_window_info.physical_size().width)
                 .height(new_window_info.physical_size().height),
         );
-        let _ = self.inner.xcb_connection.conn.flush();
+        let _ = inner.xcb_connection.conn.flush();
 
         // This will trigger a `ConfigureNotify` event which will in turn change `self.window_info`
         // and notify the window handler about it
     }
 
     #[cfg(feature = "opengl")]
-    pub fn gl_context(&self) -> Option<&crate::gl::GlContext> {
-        self.inner.gl_context.as_ref().map(|gl| gl.as_ref())
+    pub fn gl_context(&self) -> Option<Rc<crate::gl::GlContext>> {
+        let Some(inner) = self.inner.upgrade() else { return None };
+        inner.gl_context.clone()
     }
 }
 
 impl HasWindowHandle for Window {
     fn window_handle(&self) -> Result<raw_window_handle::WindowHandle<'_>, HandleError> {
-        let mut handle = XlibWindowHandle::new(self.inner.window_id.into());
+        let Some(inner) = self.inner.upgrade() else { return Err(HandleError::Unavailable) };
+        let mut handle = XlibWindowHandle::new(inner.window_id.into());
 
-        handle.visual_id = self.inner.visual_id.into();
+        handle.visual_id = inner.visual_id.into();
 
         // SAFETY: all fields are filled in, we should be good
         Ok(unsafe { raw_window_handle::WindowHandle::borrow_raw(RawWindowHandle::Xlib(handle)) })
@@ -376,7 +381,8 @@ impl HasWindowHandle for Window {
 
 impl HasDisplayHandle for Window {
     fn display_handle(&self) -> Result<DisplayHandle<'_>, HandleError> {
-        let display = self.inner.xcb_connection.dpy;
+        let Some(inner) = self.inner.upgrade() else { return Err(HandleError::Unavailable) };
+        let display = inner.xcb_connection.dpy;
         let handle = XlibDisplayHandle::new(NonNull::new(display as *mut c_void), unsafe {
             x11::xlib::XDefaultScreen(display)
         });

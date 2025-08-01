@@ -6,13 +6,14 @@ use crate::{
 };
 use std::error::Error;
 use std::os::fd::AsRawFd;
+use std::rc::Rc;
 use std::time::{Duration, Instant};
 use x11rb::connection::Connection;
 use x11rb::protocol::Event as XEvent;
 
 pub(super) struct EventLoop {
     handler: Box<dyn WindowHandler>,
-    window: WindowInner,
+    window: Rc<WindowInner>,
     parent_handle: Option<ParentHandle>,
 
     new_physical_size: Option<PhySize>,
@@ -22,7 +23,7 @@ pub(super) struct EventLoop {
 
 impl EventLoop {
     pub fn new(
-        window: WindowInner, handler: impl WindowHandler + 'static,
+        window: Rc<WindowInner>, handler: impl WindowHandler + 'static,
         parent_handle: Option<ParentHandle>,
     ) -> Self {
         Self {
@@ -47,13 +48,14 @@ impl EventLoop {
         }
 
         if let Some(size) = self.new_physical_size.take() {
-            self.window.window_info =
-                WindowInfo::from_physical_size(size, self.window.window_info.scale());
+            self.window
+                .window_info
+                .set(WindowInfo::from_physical_size(size, self.window.window_info.get().scale()));
 
-            let window_info = self.window.window_info;
+            let window_info = self.window.window_info.get();
 
             self.handler.on_event(
-                crate::Window::new(Window { inner: self.window.clone() }),
+                crate::Window::new(Window { inner: Rc::downgrade(&self.window) }),
                 Event::Window(WindowEvent::Resized(window_info)),
             );
         }
@@ -80,7 +82,8 @@ impl EventLoop {
             // if it's already time to draw a new frame.
             let next_frame = last_frame + self.frame_interval;
             if Instant::now() >= next_frame {
-                self.handler.on_frame(crate::Window::new(Window { inner: self.window.clone() }));
+                self.handler
+                    .on_frame(crate::Window::new(Window { inner: Rc::downgrade(&self.window) }));
                 last_frame = Instant::max(next_frame, Instant::now() - self.frame_interval);
             }
 
@@ -161,7 +164,7 @@ impl EventLoop {
                 let new_physical_size = PhySize::new(event.width as u32, event.height as u32);
 
                 if self.new_physical_size.is_some()
-                    || new_physical_size != self.window.window_info.physical_size()
+                    || new_physical_size != self.window.window_info.get().physical_size()
                 {
                     self.new_physical_size = Some(new_physical_size);
                 }
@@ -172,10 +175,10 @@ impl EventLoop {
             ////
             XEvent::MotionNotify(event) => {
                 let physical_pos = PhyPoint::new(event.event_x as i32, event.event_y as i32);
-                let logical_pos = physical_pos.to_logical(&self.window.window_info);
+                let logical_pos = physical_pos.to_logical(&self.window.window_info.get());
 
                 self.handler.on_event(
-                    crate::Window::new(Window { inner: self.window.clone() }),
+                    crate::Window::new(Window { inner: Rc::downgrade(&self.window) }),
                     Event::Mouse(MouseEvent::CursorMoved {
                         position: logical_pos,
                         modifiers: key_mods(event.state),
@@ -185,15 +188,15 @@ impl EventLoop {
 
             XEvent::EnterNotify(event) => {
                 self.handler.on_event(
-                    crate::Window::new(Window { inner: self.window.clone() }),
+                    crate::Window::new(Window { inner: Rc::downgrade(&self.window) }),
                     Event::Mouse(MouseEvent::CursorEntered),
                 );
                 // since no `MOTION_NOTIFY` event is generated when `ENTER_NOTIFY` is generated,
                 // we generate a CursorMoved as well, so the mouse position from here isn't lost
                 let physical_pos = PhyPoint::new(event.event_x as i32, event.event_y as i32);
-                let logical_pos = physical_pos.to_logical(&self.window.window_info);
+                let logical_pos = physical_pos.to_logical(&self.window.window_info.get());
                 self.handler.on_event(
-                    crate::Window::new(Window { inner: self.window.clone() }),
+                    crate::Window::new(Window { inner: Rc::downgrade(&self.window) }),
                     Event::Mouse(MouseEvent::CursorMoved {
                         position: logical_pos,
                         modifiers: key_mods(event.state),
@@ -203,7 +206,7 @@ impl EventLoop {
 
             XEvent::LeaveNotify(_) => {
                 self.handler.on_event(
-                    crate::Window::new(Window { inner: self.window.clone() }),
+                    crate::Window::new(Window { inner: Rc::downgrade(&self.window) }),
                     Event::Mouse(MouseEvent::CursorLeft),
                 );
             }
@@ -211,7 +214,7 @@ impl EventLoop {
             XEvent::ButtonPress(event) => match event.detail {
                 4..=7 => {
                     self.handler.on_event(
-                        crate::Window::new(Window { inner: self.window.clone() }),
+                        crate::Window::new(Window { inner: Rc::downgrade(&self.window) }),
                         Event::Mouse(MouseEvent::WheelScrolled {
                             delta: match event.detail {
                                 4 => ScrollDelta::Lines { x: 0.0, y: 1.0 },
@@ -227,7 +230,7 @@ impl EventLoop {
                 detail => {
                     let button_id = mouse_id(detail);
                     self.handler.on_event(
-                        crate::Window::new(Window { inner: self.window.clone() }),
+                        crate::Window::new(Window { inner: Rc::downgrade(&self.window) }),
                         Event::Mouse(MouseEvent::ButtonPressed {
                             button: button_id,
                             modifiers: key_mods(event.state),
@@ -240,7 +243,7 @@ impl EventLoop {
                 if !(4..=7).contains(&event.detail) {
                     let button_id = mouse_id(event.detail);
                     self.handler.on_event(
-                        crate::Window::new(Window { inner: self.window.clone() }),
+                        crate::Window::new(Window { inner: Rc::downgrade(&self.window) }),
                         Event::Mouse(MouseEvent::ButtonReleased {
                             button: button_id,
                             modifiers: key_mods(event.state),
@@ -254,14 +257,14 @@ impl EventLoop {
             ////
             XEvent::KeyPress(event) => {
                 self.handler.on_event(
-                    crate::Window::new(Window { inner: self.window.clone() }),
+                    crate::Window::new(Window { inner: Rc::downgrade(&self.window) }),
                     Event::Keyboard(convert_key_press_event(&event)),
                 );
             }
 
             XEvent::KeyRelease(event) => {
                 self.handler.on_event(
-                    crate::Window::new(Window { inner: self.window.clone() }),
+                    crate::Window::new(Window { inner: Rc::downgrade(&self.window) }),
                     Event::Keyboard(convert_key_release_event(&event)),
                 );
             }
@@ -277,7 +280,7 @@ impl EventLoop {
 
     fn handle_must_close(&mut self) {
         self.handler.on_event(
-            crate::Window::new(Window { inner: self.window.clone() }),
+            crate::Window::new(Window { inner: Rc::downgrade(&self.window) }),
             Event::Window(WindowEvent::WillClose),
         );
 
