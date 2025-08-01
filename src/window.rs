@@ -1,7 +1,10 @@
+use std::cell::RefCell;
 use std::marker::PhantomData;
+use std::rc::Rc;
 
 use raw_window_handle::{
-    HasRawDisplayHandle, HasRawWindowHandle, RawDisplayHandle, RawWindowHandle,
+    DisplayHandle, HandleError, HasDisplayHandle, HasRawDisplayHandle, HasRawWindowHandle,
+    HasWindowHandle, RawDisplayHandle, RawWindowHandle,
 };
 
 use crate::event::{Event, EventStatus};
@@ -38,25 +41,25 @@ impl WindowHandle {
     }
 }
 
-unsafe impl HasRawWindowHandle for WindowHandle {
-    fn raw_window_handle(&self) -> RawWindowHandle {
-        self.window_handle.raw_window_handle()
+impl HasWindowHandle for WindowHandle {
+    fn window_handle(&self) -> Result<raw_window_handle::WindowHandle<'_>, HandleError> {
+        self.window_handle.window_handle()
     }
 }
 
 pub trait WindowHandler {
-    fn on_frame(&mut self, window: &mut Window);
-    fn on_event(&mut self, window: &mut Window, event: Event) -> EventStatus;
+    fn on_frame(&mut self, window: Window);
+    fn on_event(&mut self, window: Window, event: Event) -> EventStatus;
 }
 
-pub struct Window<'a> {
-    window: platform::Window<'a>,
-
+#[derive(Clone)]
+pub struct Window {
+    window: platform::Window,
     // so that Window is !Send on all platforms
-    phantom: PhantomData<*mut ()>,
+    //phantom: PhantomData<*mut ()>,
 }
 
-impl<'a> Window<'a> {
+impl Window {
     #[cfg(target_os = "windows")]
     pub(crate) fn new(window: platform::Window<'a>) -> Window<'a> {
         Window { window, phantom: PhantomData }
@@ -64,14 +67,14 @@ impl<'a> Window<'a> {
 
     #[cfg(not(target_os = "windows"))]
     pub(crate) fn new(window: platform::Window) -> Window {
-        Window { window, phantom: PhantomData }
+        Window { window }
     }
 
     pub fn open_parented<P, H, B>(parent: &P, options: WindowOpenOptions, build: B) -> WindowHandle
     where
-        P: HasRawWindowHandle,
+        P: HasWindowHandle,
         H: WindowHandler + 'static,
-        B: FnOnce(&mut Window) -> H,
+        B: FnOnce(Window) -> H,
         B: Send + 'static,
     {
         let window_handle = platform::Window::open_parented::<P, H, B>(parent, options, build);
@@ -81,7 +84,7 @@ impl<'a> Window<'a> {
     pub fn open_blocking<H, B>(options: WindowOpenOptions, build: B)
     where
         H: WindowHandler + 'static,
-        B: FnOnce(&mut Window) -> H,
+        B: FnOnce(crate::Window) -> H,
         B: Send + 'static,
     {
         platform::Window::open_blocking::<H, B>(options, build)
@@ -122,14 +125,14 @@ impl<'a> Window<'a> {
     }
 }
 
-unsafe impl<'a> HasRawWindowHandle for Window<'a> {
-    fn raw_window_handle(&self) -> RawWindowHandle {
-        self.window.raw_window_handle()
+impl HasWindowHandle for Window {
+    fn window_handle(&self) -> Result<raw_window_handle::WindowHandle<'_>, HandleError> {
+        self.window.window_handle()
     }
 }
 
-unsafe impl<'a> HasRawDisplayHandle for Window<'a> {
-    fn raw_display_handle(&self) -> RawDisplayHandle {
-        self.window.raw_display_handle()
+impl HasDisplayHandle for Window {
+    fn display_handle(&self) -> Result<DisplayHandle<'_>, HandleError> {
+        self.window.display_handle()
     }
 }

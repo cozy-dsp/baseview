@@ -14,7 +14,7 @@ struct FemtovgExample {
 }
 
 impl FemtovgExample {
-    fn new(window: &mut Window) -> Self {
+    fn new(window: Window) -> Self {
         let context = window.gl_context().unwrap();
         unsafe { context.make_current() };
 
@@ -36,7 +36,7 @@ impl FemtovgExample {
 }
 
 impl WindowHandler for FemtovgExample {
-    fn on_frame(&mut self, window: &mut Window) {
+    fn on_frame(&mut self, window: Window) {
         if !self.damaged {
             return;
         }
@@ -75,7 +75,7 @@ impl WindowHandler for FemtovgExample {
         self.damaged = false;
     }
 
-    fn on_event(&mut self, window: &mut Window, event: Event) -> EventStatus {
+    fn on_event(&mut self, mut window: Window, event: Event) -> EventStatus {
         match event {
             Event::Window(WindowEvent::Resized(size)) => {
                 let phy_size = size.physical_size();
